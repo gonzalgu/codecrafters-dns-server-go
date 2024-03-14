@@ -4,6 +4,8 @@ import (
 	"fmt"
 	// Uncomment this block to pass the first stage
 	"net"
+
+	"github.com/codecrafters-io/dns-server-starter-go/app/dnsmessage"
 )
 
 func main() {
@@ -37,12 +39,21 @@ func main() {
 		receivedData := string(buf[:size])
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
 
+		dnsQuery := readQuery(buf[:size])
+		fmt.Printf("dnsQuery: %v\n", dnsQuery)
+
 		// Create an empty response
-		response := []byte{}
+		dnsResponse := dnsmessage.Process(*dnsQuery)
+		fmt.Printf("%+v\n", dnsResponse)
+		response := dnsResponse.Pack()
 
 		_, err = udpConn.WriteToUDP(response, source)
 		if err != nil {
 			fmt.Println("Failed to send response:", err)
 		}
 	}
+}
+
+func readQuery(buffer []byte) *dnsmessage.DNSMessage {
+	return dnsmessage.Unpack(buffer)
 }
