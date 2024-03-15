@@ -238,14 +238,14 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 			ARCOUNT: 0,
 		},
 		Question: Question{
-			Labels: []string{"codecrafters", "io"},
+			Labels: dnsQuery.Question.Labels,
 			Type:   1,
 			Class:  1,
 		},
 		Answer: Answer{
 			RR: []RR{
 				{
-					Name:     []string{"codecrafters", "io"},
+					Name:     dnsQuery.Question.Labels,
 					Type:     1,
 					Class:    1,
 					TTL:      60,
