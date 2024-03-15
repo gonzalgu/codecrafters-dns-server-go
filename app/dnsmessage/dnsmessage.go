@@ -6,7 +6,8 @@ import (
 )
 
 type DNSMessage struct {
-	Header DNSHeader
+	Header   DNSHeader
+	Question Question
 }
 
 // DNSHeader represents an unpacked DNS message header.
@@ -24,6 +25,53 @@ type DNSHeader struct {
 	ANCOUNT uint16
 	NSCOUNT uint16
 	ARCOUNT uint16
+}
+
+type Question struct {
+	Labels []string
+	Type   uint16
+	Class  uint16
+}
+
+func UnpackLabels(data []byte) ([]string, int) {
+	var res []string
+	i := 0
+	for data[i] != 0 {
+		size := int(data[i])
+		res = append(res, string(data[i+1:i+1+size]))
+		i += 1 + size
+	}
+	return res, i + 1
+}
+
+func UnpackQuestion(data []byte) (*Question, int) {
+	labels, idx := UnpackLabels(data)
+	return &Question{
+		Labels: labels,
+		Type:   binary.BigEndian.Uint16(data[idx : idx+2]),
+		Class:  binary.BigEndian.Uint16(data[idx+2 : idx+4]),
+	}, idx + 4
+}
+
+func (q *Question) Pack() []byte {
+	l := 1
+	for _, s := range q.Labels {
+		l += len(s) + 1
+	}
+	buffer := make([]byte, l+4)
+	i := 0
+	for _, s := range q.Labels {
+		l := len(s)
+		buffer[i] = byte(l)
+		i++
+		copy(buffer[i:i+l], []byte(s))
+		i += l
+	}
+	buffer[i] = 0x00
+	i++
+	binary.BigEndian.PutUint16(buffer[i:i+2], q.Type)
+	binary.BigEndian.PutUint16(buffer[i+2:i+4], q.Class)
+	return buffer
 }
 
 // Pack converts the DNSHeader struct into a 12-byte slice in network byte order.
@@ -81,17 +129,21 @@ func (h *DNSHeader) String() string {
 		h.QDCOUNT, h.ANCOUNT, h.NSCOUNT, h.ARCOUNT)
 }
 
-func (m *DNSMessage) String() string {
-	return fmt.Sprintf("DNS Message:\n%s\n", m.Header.String())
-}
-
+/*
+	func (m *DNSMessage) String() string {
+		return fmt.Sprintf("DNS Message:\n%s\n", m.Header.String())
+	}
+*/
 func (d *DNSMessage) Pack() []byte {
-	return d.Header.Pack()
+	return append(d.Header.Pack(), d.Question.Pack()...)
 }
 
 func Unpack(data []byte) *DNSMessage {
+	hd := UnpackDNSHeader(data[:12])
+	q, _ := UnpackQuestion(data[12:])
 	return &DNSMessage{
-		Header: *UnpackDNSHeader(data[:12]),
+		Header:   *hd,
+		Question: *q,
 	}
 }
 
@@ -107,10 +159,15 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 			RA:      0,
 			Z:       0,
 			RCODE:   0,
-			QDCOUNT: 0,
+			QDCOUNT: 1,
 			ANCOUNT: 0,
 			NSCOUNT: 0,
 			ARCOUNT: 0,
+		},
+		Question: Question{
+			Labels: []string{"codecrafters", "io"},
+			Type:   1,
+			Class:  1,
 		},
 	}
 	return response
