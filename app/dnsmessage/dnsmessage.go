@@ -215,17 +215,23 @@ func Unpack(data []byte) *DNSMessage {
 }
 
 func Process(dnsQuery DNSMessage) DNSMessage {
+	rcode := 0
+	if dnsQuery.Header.OPCODE == 0 {
+		rcode = 0
+	} else {
+		rcode = 4
+	}
 	response := DNSMessage{
 		Header: DNSHeader{
-			ID:      1234,
+			ID:      dnsQuery.Header.ID,
 			QR:      1,
-			OPCODE:  0,
+			OPCODE:  dnsQuery.Header.OPCODE,
 			AA:      0,
 			TC:      0,
-			RD:      0,
+			RD:      dnsQuery.Header.RD,
 			RA:      0,
 			Z:       0,
-			RCODE:   0,
+			RCODE:   byte(rcode),
 			QDCOUNT: 1,
 			ANCOUNT: 1,
 			NSCOUNT: 0,
