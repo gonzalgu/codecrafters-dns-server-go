@@ -8,6 +8,7 @@ import (
 type DNSMessage struct {
 	Header   DNSHeader
 	Question Question
+	Answer   Answer
 }
 
 // DNSHeader represents an unpacked DNS message header.
@@ -31,6 +32,72 @@ type Question struct {
 	Labels []string
 	Type   uint16
 	Class  uint16
+}
+
+type Answer struct {
+	RR []RR
+}
+
+type RR struct {
+	Name     []string
+	Type     uint16
+	Class    uint16
+	TTL      uint32
+	RDLength uint16
+	RData    uint32
+}
+
+func (a *Answer) Pack() []byte {
+	res := make([]byte, 0)
+	for _, rr := range a.RR {
+		res = append(res, rr.Pack()...)
+	}
+	return res
+}
+
+func UnpackAnswer(data []byte) (*Answer, int) {
+	rr, len := UnpackRR(data)
+	return &Answer{
+		RR: []RR{
+			*rr,
+		},
+	}, len
+}
+
+func (rr *RR) Pack() []byte {
+	l := 1
+	for _, s := range rr.Name {
+		l += len(s) + 1
+	}
+	buffer := make([]byte, l+2+2+4+2+4)
+	i := 0
+	for _, s := range rr.Name {
+		l := len(s)
+		buffer[i] = byte(l)
+		i++
+		copy(buffer[i:i+l], []byte(s))
+		i += l
+	}
+	buffer[i] = 0x00
+	i++
+	binary.BigEndian.PutUint16(buffer[i:i+2], rr.Type)
+	binary.BigEndian.PutUint16(buffer[i+2:i+4], rr.Class)
+	binary.BigEndian.PutUint32(buffer[i+4:i+8], rr.TTL)
+	binary.BigEndian.PutUint16(buffer[i+8:i+10], rr.RDLength)
+	binary.BigEndian.PutUint32(buffer[i+10:i+14], rr.RData)
+	return buffer
+}
+
+func UnpackRR(data []byte) (*RR, int) {
+	labels, idx := UnpackLabels(data)
+	return &RR{
+		Name:     labels,
+		Type:     binary.BigEndian.Uint16(data[idx : idx+2]),
+		Class:    binary.BigEndian.Uint16(data[idx+2 : idx+4]),
+		TTL:      binary.BigEndian.Uint32(data[idx+4 : idx+8]),
+		RDLength: binary.BigEndian.Uint16(data[idx+8 : idx+10]),
+		RData:    binary.BigEndian.Uint32(data[idx+10 : idx+14]),
+	}, idx + 14
 }
 
 func UnpackLabels(data []byte) ([]string, int) {
@@ -129,21 +196,21 @@ func (h *DNSHeader) String() string {
 		h.QDCOUNT, h.ANCOUNT, h.NSCOUNT, h.ARCOUNT)
 }
 
-/*
-	func (m *DNSMessage) String() string {
-		return fmt.Sprintf("DNS Message:\n%s\n", m.Header.String())
-	}
-*/
 func (d *DNSMessage) Pack() []byte {
-	return append(d.Header.Pack(), d.Question.Pack()...)
+	packed := append(d.Header.Pack(), d.Question.Pack()...)
+	return append(packed, d.Answer.Pack()...)
 }
 
 func Unpack(data []byte) *DNSMessage {
 	hd := UnpackDNSHeader(data[:12])
 	q, _ := UnpackQuestion(data[12:])
+	//a, _ := UnpackAnswer(data[12+qlen:])
 	return &DNSMessage{
 		Header:   *hd,
 		Question: *q,
+		Answer: Answer{
+			RR: []RR{},
+		},
 	}
 }
 
@@ -160,7 +227,7 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 			Z:       0,
 			RCODE:   0,
 			QDCOUNT: 1,
-			ANCOUNT: 0,
+			ANCOUNT: 1,
 			NSCOUNT: 0,
 			ARCOUNT: 0,
 		},
@@ -168,6 +235,18 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 			Labels: []string{"codecrafters", "io"},
 			Type:   1,
 			Class:  1,
+		},
+		Answer: Answer{
+			RR: []RR{
+				{
+					Name:     []string{"codecrafters", "io"},
+					Type:     1,
+					Class:    1,
+					TTL:      60,
+					RDLength: 4,
+					RData:    binary.BigEndian.Uint32([]byte{0x08, 0x08, 0x08, 0x08}),
+				},
+			},
 		},
 	}
 	return response

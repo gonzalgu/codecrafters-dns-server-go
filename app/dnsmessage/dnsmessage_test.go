@@ -87,9 +87,36 @@ func TestMessagePackUnpack(t *testing.T) {
 			Type:   1,
 			Class:  1,
 		},
+		Answer: Answer{
+			RR: []RR{
+				{
+					Name:     []string{"codecrafters", "io"},
+					Type:     1,
+					Class:    1,
+					TTL:      60,
+					RDLength: 4,
+					RData:    1234,
+				},
+			},
+		},
 	}
 	packed := msg.Pack()
 	unpacked := Unpack(packed)
 	fmt.Printf("msg: %v+\n", msg)
+	fmt.Printf("unpacked: %v+\n", unpacked)
+}
+
+func TestRRPackUnpack(t *testing.T) {
+	rr := RR{
+		Name:     []string{"codecrafters", "io"},
+		Type:     1,
+		Class:    1,
+		TTL:      60,
+		RDLength: 4,
+		RData:    1234,
+	}
+	packed := rr.Pack()
+	unpacked, _ := UnpackRR(packed)
+	fmt.Printf("rr: %v+\n", rr)
 	fmt.Printf("unpacked: %v+\n", unpacked)
 }
