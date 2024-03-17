@@ -1,14 +1,15 @@
 package dnsmessage
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 )
 
 type DNSMessage struct {
 	Header   DNSHeader
-	Question Question
-	Answer   Answer
+	Question []Question
+	Answer   []Answer
 }
 
 // DNSHeader represents an unpacked DNS message header.
@@ -48,11 +49,11 @@ type RR struct {
 }
 
 func (a *Answer) Pack() []byte {
-	res := make([]byte, 0)
+	var buffer bytes.Buffer
 	for _, rr := range a.RR {
-		res = append(res, rr.Pack()...)
+		buffer.Write(rr.Pack())
 	}
-	return res
+	return buffer.Bytes()
 }
 
 func UnpackAnswer(data []byte) (*Answer, int) {
@@ -65,27 +66,21 @@ func UnpackAnswer(data []byte) (*Answer, int) {
 }
 
 func (rr *RR) Pack() []byte {
-	l := 1
-	for _, s := range rr.Name {
-		l += len(s) + 1
-	}
-	buffer := make([]byte, l+2+2+4+2+4)
-	i := 0
+	var buffer bytes.Buffer
 	for _, s := range rr.Name {
 		l := len(s)
-		buffer[i] = byte(l)
-		i++
-		copy(buffer[i:i+l], []byte(s))
-		i += l
+		buffer.WriteByte(byte(l))
+		for _, c := range s {
+			buffer.WriteByte(byte(c))
+		}
 	}
-	buffer[i] = 0x00
-	i++
-	binary.BigEndian.PutUint16(buffer[i:i+2], rr.Type)
-	binary.BigEndian.PutUint16(buffer[i+2:i+4], rr.Class)
-	binary.BigEndian.PutUint32(buffer[i+4:i+8], rr.TTL)
-	binary.BigEndian.PutUint16(buffer[i+8:i+10], rr.RDLength)
-	binary.BigEndian.PutUint32(buffer[i+10:i+14], rr.RData)
-	return buffer
+	buffer.WriteByte(0x00)
+	binary.Write(&buffer, binary.BigEndian, rr.Type)
+	binary.Write(&buffer, binary.BigEndian, rr.Class)
+	binary.Write(&buffer, binary.BigEndian, rr.TTL)
+	binary.Write(&buffer, binary.BigEndian, rr.RDLength)
+	binary.Write(&buffer, binary.BigEndian, rr.RData)
+	return buffer.Bytes()
 }
 
 func UnpackRR(data []byte) (*RR, int) {
@@ -121,24 +116,18 @@ func UnpackQuestion(data []byte) (*Question, int) {
 }
 
 func (q *Question) Pack() []byte {
-	l := 1
-	for _, s := range q.Labels {
-		l += len(s) + 1
-	}
-	buffer := make([]byte, l+4)
-	i := 0
+	var buffer bytes.Buffer
 	for _, s := range q.Labels {
 		l := len(s)
-		buffer[i] = byte(l)
-		i++
-		copy(buffer[i:i+l], []byte(s))
-		i += l
+		buffer.WriteByte(byte(l))
+		for _, c := range s {
+			buffer.WriteByte(byte(c))
+		}
 	}
-	buffer[i] = 0x00
-	i++
-	binary.BigEndian.PutUint16(buffer[i:i+2], q.Type)
-	binary.BigEndian.PutUint16(buffer[i+2:i+4], q.Class)
-	return buffer
+	buffer.WriteByte(0x00)
+	binary.Write(&buffer, binary.BigEndian, q.Type)
+	binary.Write(&buffer, binary.BigEndian, q.Class)
+	return buffer.Bytes()
 }
 
 // Pack converts the DNSHeader struct into a 12-byte slice in network byte order.
@@ -197,20 +186,35 @@ func (h *DNSHeader) String() string {
 }
 
 func (d *DNSMessage) Pack() []byte {
-	packed := append(d.Header.Pack(), d.Question.Pack()...)
-	return append(packed, d.Answer.Pack()...)
+	packed := d.Header.Pack()
+	for _, q := range d.Question {
+		packed = append(packed, q.Pack()...)
+	}
+	for _, a := range d.Answer {
+		packed = append(packed, a.Pack()...)
+	}
+	return packed
 }
 
 func Unpack(data []byte) *DNSMessage {
 	hd := UnpackDNSHeader(data[:12])
-	q, _ := UnpackQuestion(data[12:])
-	//a, _ := UnpackAnswer(data[12+qlen:])
+	idx := 12
+	qs := make([]Question, 0)
+	for i := 0; i < int(hd.QDCOUNT); i++ {
+		q, len := UnpackQuestion(data[idx:])
+		idx += len
+		qs = append(qs, *q)
+	}
+	as := make([]Answer, 0)
+	for i := 0; i < int(hd.ANCOUNT); i++ {
+		a, len := UnpackAnswer(data[idx:])
+		idx += len
+		as = append(as, *a)
+	}
 	return &DNSMessage{
 		Header:   *hd,
-		Question: *q,
-		Answer: Answer{
-			RR: []RR{},
-		},
+		Question: qs,
+		Answer:   as,
 	}
 }
 
@@ -221,31 +225,35 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 	} else {
 		rcode = 4
 	}
-	response := DNSMessage{
-		Header: DNSHeader{
-			ID:      dnsQuery.Header.ID,
-			QR:      1,
-			OPCODE:  dnsQuery.Header.OPCODE,
-			AA:      0,
-			TC:      0,
-			RD:      dnsQuery.Header.RD,
-			RA:      0,
-			Z:       0,
-			RCODE:   byte(rcode),
-			QDCOUNT: 1,
-			ANCOUNT: 1,
-			NSCOUNT: 0,
-			ARCOUNT: 0,
-		},
-		Question: Question{
-			Labels: dnsQuery.Question.Labels,
+	header := DNSHeader{
+		ID:      dnsQuery.Header.ID,
+		QR:      1,
+		OPCODE:  dnsQuery.Header.OPCODE,
+		AA:      0,
+		TC:      0,
+		RD:      dnsQuery.Header.RD,
+		RA:      0,
+		Z:       0,
+		RCODE:   byte(rcode),
+		QDCOUNT: 1,
+		ANCOUNT: 1,
+		NSCOUNT: 0,
+		ARCOUNT: 0,
+	}
+
+	questions := make([]Question, dnsQuery.Header.QDCOUNT)
+	answers := make([]Answer, dnsQuery.Header.QDCOUNT)
+
+	for i := 0; i < int(dnsQuery.Header.QDCOUNT); i++ {
+		questions[i] = Question{
+			Labels: dnsQuery.Question[i].Labels,
 			Type:   1,
 			Class:  1,
-		},
-		Answer: Answer{
+		}
+		answers[i] = Answer{
 			RR: []RR{
 				{
-					Name:     dnsQuery.Question.Labels,
+					Name:     dnsQuery.Question[i].Labels,
 					Type:     1,
 					Class:    1,
 					TTL:      60,
@@ -253,7 +261,13 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 					RData:    binary.BigEndian.Uint32([]byte{0x08, 0x08, 0x08, 0x08}),
 				},
 			},
-		},
+		}
+	}
+
+	response := DNSMessage{
+		Header:   header,
+		Question: questions,
+		Answer:   answers,
 	}
 	return response
 }

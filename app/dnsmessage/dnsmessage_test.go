@@ -77,17 +77,17 @@ func TestMessagePackUnpack(t *testing.T) {
 			RA:      0,
 			Z:       0,
 			RCODE:   0,
-			QDCOUNT: 0,
-			ANCOUNT: 0,
+			QDCOUNT: 1,
+			ANCOUNT: 1,
 			NSCOUNT: 0,
 			ARCOUNT: 0,
 		},
-		Question: Question{
+		Question: []Question{{
 			Labels: []string{"google", "com"},
 			Type:   1,
 			Class:  1,
-		},
-		Answer: Answer{
+		}},
+		Answer: []Answer{{
 			RR: []RR{
 				{
 					Name:     []string{"codecrafters", "io"},
@@ -98,7 +98,7 @@ func TestMessagePackUnpack(t *testing.T) {
 					RData:    1234,
 				},
 			},
-		},
+		}},
 	}
 	packed := msg.Pack()
 	unpacked := Unpack(packed)
