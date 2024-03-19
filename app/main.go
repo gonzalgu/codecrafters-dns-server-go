@@ -44,7 +44,7 @@ func main() {
 
 		// Create an empty response
 		dnsResponse := dnsmessage.Process(*dnsQuery)
-		fmt.Printf("%+v\n", dnsResponse)
+		fmt.Printf("response: %+v\n", dnsResponse)
 		response := dnsResponse.Pack()
 
 		_, err = udpConn.WriteToUDP(response, source)

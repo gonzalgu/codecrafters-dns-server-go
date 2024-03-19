@@ -56,8 +56,8 @@ func (a *Answer) Pack() []byte {
 	return buffer.Bytes()
 }
 
-func UnpackAnswer(data []byte) (*Answer, int) {
-	rr, len := UnpackRR(data)
+func UnpackAnswer(data []byte, offset int) (*Answer, int) {
+	rr, len := UnpackRR(data, offset)
 	return &Answer{
 		RR: []RR{
 			*rr,
@@ -83,36 +83,51 @@ func (rr *RR) Pack() []byte {
 	return buffer.Bytes()
 }
 
-func UnpackRR(data []byte) (*RR, int) {
-	labels, idx := UnpackLabels(data)
+func UnpackRR(data []byte, offset int) (*RR, int) {
+	labels, offset := UnpackLabels(data, offset)
 	return &RR{
 		Name:     labels,
-		Type:     binary.BigEndian.Uint16(data[idx : idx+2]),
-		Class:    binary.BigEndian.Uint16(data[idx+2 : idx+4]),
-		TTL:      binary.BigEndian.Uint32(data[idx+4 : idx+8]),
-		RDLength: binary.BigEndian.Uint16(data[idx+8 : idx+10]),
-		RData:    binary.BigEndian.Uint32(data[idx+10 : idx+14]),
-	}, idx + 14
+		Type:     binary.BigEndian.Uint16(data[offset : offset+2]),
+		Class:    binary.BigEndian.Uint16(data[offset+2 : offset+4]),
+		TTL:      binary.BigEndian.Uint32(data[offset+4 : offset+8]),
+		RDLength: binary.BigEndian.Uint16(data[offset+8 : offset+10]),
+		RData:    binary.BigEndian.Uint32(data[offset+10 : offset+14]),
+	}, offset + 14
 }
 
-func UnpackLabels(data []byte) ([]string, int) {
+func UnpackLabels(data []byte, offset int) ([]string, int) {
 	var res []string
-	i := 0
-	for data[i] != 0 {
-		size := int(data[i])
-		res = append(res, string(data[i+1:i+1+size]))
-		i += 1 + size
+
+	for {
+		b := data[offset]
+		//tmp := b & 0xc0
+		if b == 0 {
+			//end of sequence
+			break
+		} else if (b & 0xc0) == 0xc0 {
+			//pointer to label
+			ptr := b & 0x3F
+			offset++
+			ptr = (ptr << 7) + data[offset]
+			label, _ := UnpackLabels(data, int(ptr))
+			res = append(res, label...)
+			break
+		} else {
+			size := int(b)
+			res = append(res, string(data[offset+1:offset+1+size]))
+			offset += 1 + size
+		}
 	}
-	return res, i + 1
+	return res, offset + 1
 }
 
-func UnpackQuestion(data []byte) (*Question, int) {
-	labels, idx := UnpackLabels(data)
+func UnpackQuestion(data []byte, offset int) (*Question, int) {
+	labels, offset := UnpackLabels(data, offset)
 	return &Question{
 		Labels: labels,
-		Type:   binary.BigEndian.Uint16(data[idx : idx+2]),
-		Class:  binary.BigEndian.Uint16(data[idx+2 : idx+4]),
-	}, idx + 4
+		Type:   binary.BigEndian.Uint16(data[offset : offset+2]),
+		Class:  binary.BigEndian.Uint16(data[offset+2 : offset+4]),
+	}, offset + 4
 }
 
 func (q *Question) Pack() []byte {
@@ -197,18 +212,19 @@ func (d *DNSMessage) Pack() []byte {
 }
 
 func Unpack(data []byte) *DNSMessage {
+	offset := 0
 	hd := UnpackDNSHeader(data[:12])
-	idx := 12
+	offset = 12
 	qs := make([]Question, 0)
 	for i := 0; i < int(hd.QDCOUNT); i++ {
-		q, len := UnpackQuestion(data[idx:])
-		idx += len
+		q, len := UnpackQuestion(data, offset)
+		offset = len
 		qs = append(qs, *q)
 	}
 	as := make([]Answer, 0)
 	for i := 0; i < int(hd.ANCOUNT); i++ {
-		a, len := UnpackAnswer(data[idx:])
-		idx += len
+		a, len := UnpackAnswer(data, offset)
+		offset = len
 		as = append(as, *a)
 	}
 	return &DNSMessage{
@@ -235,8 +251,8 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 		RA:      0,
 		Z:       0,
 		RCODE:   byte(rcode),
-		QDCOUNT: 1,
-		ANCOUNT: 1,
+		QDCOUNT: dnsQuery.Header.QDCOUNT,
+		ANCOUNT: dnsQuery.Header.QDCOUNT,
 		NSCOUNT: 0,
 		ARCOUNT: 0,
 	}
