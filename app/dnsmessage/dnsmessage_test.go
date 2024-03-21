@@ -187,3 +187,132 @@ func TestRRPackUnpack(t *testing.T) {
 	fmt.Printf("rr: %v+\n", rr)
 	fmt.Printf("unpacked: %v+\n", unpacked)
 }
+
+func TestSplitQueries(t *testing.T) {
+	msg := DNSMessage{
+		Header: DNSHeader{
+			ID:      1234,
+			QR:      1,
+			OPCODE:  0,
+			AA:      0,
+			TC:      0,
+			RD:      0,
+			RA:      0,
+			Z:       0,
+			RCODE:   0,
+			QDCOUNT: 2,
+			ANCOUNT: 0,
+			NSCOUNT: 0,
+			ARCOUNT: 0,
+		},
+		Question: []Question{
+			{
+				Labels: []string{"google", "com"},
+				Type:   1,
+				Class:  1,
+			},
+			{
+				Labels: []string{"arpa", "net"},
+				Type:   1,
+				Class:  1,
+			},
+		},
+		Answer: []Answer{},
+	}
+
+	result := SplitQuery(msg)
+	if len(result) != 2 {
+		t.Errorf("expected 2 messages")
+	}
+
+	for _, q := range result {
+		if q.Header.QDCOUNT != 1 {
+			t.Errorf("expected 1 question per message")
+		}
+		fmt.Printf("%v\n", q)
+	}
+}
+
+func TestCombineResponses(t *testing.T) {
+	responses := []DNSMessage{
+		{
+			Header: DNSHeader{
+				ID:      1234,
+				QR:      1,
+				OPCODE:  0,
+				AA:      0,
+				TC:      0,
+				RD:      0,
+				RA:      0,
+				Z:       0,
+				RCODE:   0,
+				QDCOUNT: 1,
+				ANCOUNT: 1,
+				NSCOUNT: 0,
+				ARCOUNT: 0,
+			},
+			Question: []Question{
+				{
+					Labels: []string{"google", "com"},
+					Type:   1,
+					Class:  1,
+				},
+			},
+			Answer: []Answer{
+				{
+					RR: []RR{
+						{
+							Name:     []string{"codecrafters", "io"},
+							Type:     1,
+							Class:    1,
+							TTL:      60,
+							RDLength: 4,
+							RData:    1234,
+						},
+					},
+				},
+			},
+		},
+		{
+			Header: DNSHeader{
+				ID:      1234,
+				QR:      1,
+				OPCODE:  0,
+				AA:      0,
+				TC:      0,
+				RD:      0,
+				RA:      0,
+				Z:       0,
+				RCODE:   0,
+				QDCOUNT: 1,
+				ANCOUNT: 1,
+				NSCOUNT: 0,
+				ARCOUNT: 0,
+			},
+			Question: []Question{
+				{
+					Labels: []string{"arpa", "net"},
+					Type:   1,
+					Class:  1,
+				},
+			},
+			Answer: []Answer{
+				{
+					RR: []RR{
+						{
+							Name:     []string{"nasa", "edu"},
+							Type:     1,
+							Class:    1,
+							TTL:      60,
+							RDLength: 4,
+							RData:    1234,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	combined := CombineResponses(responses)
+	fmt.Printf("%v+\n", combined)
+}

@@ -287,3 +287,53 @@ func Process(dnsQuery DNSMessage) DNSMessage {
 	}
 	return response
 }
+
+func SplitQuery(query DNSMessage) []DNSMessage {
+	splittedQueries := make([]DNSMessage, query.Header.QDCOUNT)
+	for i := 0; i < int(query.Header.QDCOUNT); i++ {
+		header := DNSHeader{
+			ID:      query.Header.ID,
+			QR:      query.Header.QR,
+			OPCODE:  query.Header.OPCODE,
+			AA:      query.Header.AA,
+			TC:      query.Header.TC,
+			RD:      query.Header.RD,
+			RA:      query.Header.RA,
+			Z:       query.Header.Z,
+			RCODE:   query.Header.RCODE,
+			QDCOUNT: 1,
+			ANCOUNT: 0,
+			NSCOUNT: 0,
+			ARCOUNT: 0,
+		}
+		splittedQueries[i] = DNSMessage{
+			Header: header,
+			Question: []Question{
+				query.Question[i],
+			},
+		}
+	}
+	return splittedQueries
+}
+
+func CombineResponses(responses []DNSMessage) DNSMessage {
+	header := responses[0].Header
+	header.QDCOUNT = uint16(len(responses))
+	header.ANCOUNT = uint16(len(responses))
+
+	dnsmessage := DNSMessage{
+		Header:   header,
+		Question: make([]Question, len(responses)),
+		Answer:   make([]Answer, len(responses)),
+	}
+
+	for i := 0; i < len(responses); i++ {
+		if responses[i].Header.QDCOUNT == 1 {
+			dnsmessage.Question[i] = responses[i].Question[0]
+		}
+		if responses[i].Header.ANCOUNT == 1 {
+			dnsmessage.Answer[i] = responses[i].Answer[0]
+		}
+	}
+	return dnsmessage
+}
